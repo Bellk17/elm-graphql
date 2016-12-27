@@ -493,7 +493,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     if (field.selectionSet) {
       let isMaybe = false
       if (info_type instanceof GraphQLNonNull) {
-	info_type = info_type['ofType']	
+	//info_type = info_type['ofType']
       } else {
 	isMaybe = true
       }

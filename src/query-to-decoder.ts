@@ -191,7 +191,7 @@ export function decoderFor(def: OperationDefinition | FragmentDefinition, info: 
     let info_type = info.getType()
     let isMaybe = false
     if (info_type instanceof GraphQLNonNull) {
-      info_type = info_type['ofType'];
+      //info_type = info_type['ofType'];
     } else {
       isMaybe = true;
     }
