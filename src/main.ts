@@ -68,8 +68,8 @@ if (options.init) {
   // check that the endpoint works
   performIntrospectionQuery(body => {
     fs.writeFileSync('elm-package.json', JSON.stringify(elmPackageJson, null, '    '));
-    
-    console.log('Success! You should now run `elm package install jahewson/elm-graphql-module`.');
+
+    console.log('Success!');
     process.exit();
   });
 }
@@ -134,18 +134,19 @@ function capitalize(str: string) {
 
 function processFiles(schema: GraphQLSchema) {
   let paths = scanDir('.', []);
- 
+
   for (let filePath of paths) {
     let fullpath = path.join(...filePath);
     let graphql = fs.readFileSync(fullpath, 'utf8');
-    let rootindex = fullpath.indexOf("src/");
-    let rootpath = fullpath.substr(rootindex + 4);
+    let rootindex = fullpath.indexOf("src/elm/");
+    let rootpath = fullpath.substr(rootindex + 8);
     let pathdirs = rootpath.split('/');
     let filepath = pathdirs.map(capitalize).join('.');
     let basename = path.basename(fullpath);
     let extname =  path.extname(fullpath);
     let filename = basename.substr(0, basename.length - extname.length);
     let moduleName = filepath.substr(0, filepath.length - extname.length);
+
     let outPath = path.join(path.dirname(fullpath), filename + '.elm');
 
     let elm = queryToElm(graphql, moduleName, endpointUrl, verb, schema);

@@ -79,7 +79,7 @@ export function queryToElm(graphql: string, moduleName: string, liveUrl: string,
     'Json.Decode exposing (..)',
     'Json.Encode exposing (encode)',
     'Http',
-    'GraphQL exposing (apply, maybeEncode)'
+    'GraphQL.Client exposing (Context, apply, maybeEncode)'
   ], decls);
 }
 
@@ -89,7 +89,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
 
   function walkQueryDocument(doc: Document, info: TypeInfo): [Array<ElmDecl>, Array<string>] {
     let decls: Array<ElmDecl> = [];
-    decls.push(new ElmFunctionDecl('endpointUrl', [], new ElmTypeName('String'), { expr: `"${uri}"` }));
+    // decls.push(new ElmFunctionDecl('endpointUrl', [], new ElmTypeName('String'), { expr: `"${uri}"` }));
 
     buildFragmentDefinitionMap(doc);
     let seenFragments: FragmentDefinitionMap = {};
@@ -180,7 +180,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     }
     return fragments;
   }
-  
+
   function collectUnions(def: Definition, unions: GraphQLUnionMap = {}): GraphQLUnionMap {
     let info = new TypeInfo(schema);
     visit(doc, {
@@ -261,7 +261,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     let params = types.map((t, i) => alphabet[i]).join(' ');
     return new ElmTypeDecl(union.name + ' ' + params, types.map((t, i) => elmSafeName(t.name) + ' ' + alphabet[i]));
   }
-  
+
   function walkOperationDefinition(def: OperationDefinition, info: TypeInfo): Array<ElmDecl> {
     info.enter(def);
     if (!info.getType()) {
@@ -310,9 +310,11 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       expose.push(funcName);
       expose.push(resultType);
 
+      let elmContextType = new ElmTypeName("Context");
       let elmParamsType = new ElmTypeRecord(parameters.map(p => new ElmFieldDecl(p.name, p.type)));
+      let elmContext = new ElmParameterDecl('context', elmContextType);
       let elmParams = new ElmParameterDecl('params', elmParamsType);
-      let elmParamsDecl = elmParamsType.fields.length > 0 ? [elmParams] : [];
+      let elmParamsDecl = elmParamsType.fields.length > 0 ? [elmContext, elmParams] : [elmContext];
       let methodParam = def.operation == 'query' ? `"${verb}" ` : '';
 
       decls.push(new ElmFunctionDecl(
@@ -337,7 +339,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
              .join(`\n                , `) + '\n' +
              `                ]\n` +
              `    in\n` +
-             `    GraphQL.${def.operation} ${methodParam}endpointUrl graphQLQuery "${name}" graphQLParams ${decodeFuncName}`
+             `    GraphQL.${def.operation} context ${methodParam}graphQLQuery "${name}" graphQLParams ${decodeFuncName}`
          }
       ));
       let resultTypeName = resultType[0].toUpperCase() + resultType.substr(1);
@@ -345,7 +347,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
          decodeFuncName, [],
          new ElmTypeName('Decoder ' + resultTypeName),
          decoderForQuery(def, info, schema, fragmentDefinitionMap, seenFragments) ));
-      
+
       info.leave(def);
       return decls;
     }
@@ -358,7 +360,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     if (type instanceof GraphQLNonNull) {
       type = type['ofType'];
     } else {
-      isMaybe = true;    
+      isMaybe = true;
     }
 
     if (type instanceof GraphQLInputObjectType) {
@@ -407,7 +409,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       let typeName = spreadName[0].toUpperCase() + spreadName.substr(1) + '_';
       type = new ElmTypeApp(typeName, [type]);
     }
-    
+
     decls.push(new ElmTypeAliasDecl(resultType + '_', type, ['a']));
     decls.push(new ElmTypeAliasDecl(resultType, new ElmTypeApp(resultType + '_', [new ElmTypeRecord([])])));
 
@@ -441,11 +443,11 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       return [fields, spreads, null];
     }
   }
-  
+
   function walkUnionSelectionSet(selSet: SelectionSet, info: TypeInfo): ElmType {
     let union = <GraphQLUnionType>info.getType();
 
-      let typeMap: { [name: string]: ElmType } = {}; 
+      let typeMap: { [name: string]: ElmType } = {};
       for (let type of union.getTypes()) {
         typeMap[type.name] = new ElmTypeRecord([]);
       }
@@ -457,7 +459,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
           info.enter(inline);
           let [fields, spreads] = walkSelectionSet(inline.selectionSet, info);
           info.leave(inline);
-          
+
           // record
           let type: ElmType = new ElmTypeRecord(fields);
           // spreads
@@ -494,14 +496,14 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     if (field.selectionSet) {
       let isMaybe = false
       if (info_type instanceof GraphQLNonNull) {
-	info_type = info_type['ofType']	
+	info_type = info_type['ofType']
       } else {
 	isMaybe = true
       }
 
       let isList = info_type instanceof GraphQLList;
       let [fields, spreads, union] = walkSelectionSet(field.selectionSet, info);
-      
+
       let type: ElmType = union ? union : new ElmTypeRecord(fields);
 
       for (let spreadName of spreads) {
@@ -533,7 +535,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
 
 export function typeToElm(type: GraphQLType, isNonNull = false): ElmType {
   let elmType: ElmType;
-  
+
   if (type instanceof GraphQLScalarType) {
     switch (type.name) {
       case 'Int': elmType = new ElmTypeName('Int'); break;
