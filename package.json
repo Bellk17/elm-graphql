@@ -1,6 +1,6 @@
 {
-  "name": "elm-graphql",
-  "version": "1.0.6",
+  "name": "@blissfully/elm-graphql",
+  "version": "1.0.9",
   "description": "Elm code generator for GraphQL",
   "main": "lib/main.js",
   "bin": "bin/elm-graphql",
@@ -9,7 +9,7 @@
     "postinstall": "tsc",
     "tsc": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node lib/query-to-elm.js"
+    "start": "node ./bin/elm-graphql"
   },
   "author": "John Hewson",
   "license": "BSD",
