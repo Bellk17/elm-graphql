@@ -79,7 +79,7 @@ export function queryToElm(graphql: string, moduleName: string, liveUrl: string,
     'Json.Decode exposing (..)',
     'Json.Encode exposing (encode)',
     'Http',
-    'GraphQL.Client as GraphQL exposing (Context, apply, maybeEncode)'
+    'GraphQL.Client as GraphQL exposing (Context, apply, maybeEncode, GQLError)'
   ], decls);
 }
 
@@ -318,7 +318,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       let methodParam = def.operation == 'query' ? `"${verb}" ` : '';
 
       decls.push(new ElmFunctionDecl(
-         funcName, elmParamsDecl, new ElmTypeName(`Task Http.Error ${resultType}`),
+         funcName, elmParamsDecl, new ElmTypeName(`Task GQLError ${resultType}`),
          {
            // we use awkward variable names to avoid naming collisions with query parameters
            expr: `let graphQLQuery = """${query.replace(/\s+/g, ' ')}""" in\n` +
