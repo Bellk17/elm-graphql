@@ -129,7 +129,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     for (let name in seenUnions) {
       let union = seenUnions[name];
       decls.unshift(walkUnion(union));
-      expose.push(union.name);
+      expose.push((union.name + "(..)"));
     }
 
     return [decls, expose];
