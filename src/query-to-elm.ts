@@ -77,7 +77,6 @@ export function queryToElm(graphql: string, moduleName: string, liveUrl: string,
   return moduleToString(moduleName, expose, [
     'Task exposing (Task)',
     'Json.Decode.Extra exposing ((|:))',
-    'Platform.Task exposing (Task)'
     'Json.Decode exposing (..)',
     'Json.Encode exposing (encode)',
     'Http',
