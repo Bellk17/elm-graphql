@@ -274,7 +274,7 @@ export function decoderFor(def: OperationDefinition | FragmentDefinition, info: 
 
     decoder += `\n${indent}_ -> fail "Unexpected union type")`;
 
-    decoder = '((field "__typename" string) `andThen` ' + decoder + ')';
+    decoder = '((field "__typename" string) |> andThen ' + decoder + ')';
     return { expr: '(field "' + originalName + '" ' + decoder +')' };
   }
 
