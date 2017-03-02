@@ -149,7 +149,7 @@ export function decoderFor(def: OperationDefinition | FragmentDefinition, info: 
       }
     }
     info.leave(selSet);
-    return { expr: fields.map(f => f.expr).filter(e => e.length > 0).join('\n        |>apply ') }
+    return { expr: fields.map(f => f.expr).filter(e => e.length > 0).join('\n        |: ') }
   }
 
   function getSelectionSetFields(selSet: SelectionSet, info: TypeInfo): Array<string> {

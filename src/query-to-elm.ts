@@ -75,6 +75,9 @@ export function queryToElm(graphql: string, moduleName: string, liveUrl: string,
   let queryDocument = parse(graphql);
   let [decls, expose] = translateQuery(liveUrl, queryDocument, schema, verb);
   return moduleToString(moduleName, expose, [
+    'Task exposing (Task)',
+    'Json.Decode.Extra exposing ((|:))',
+    'Platform.Task exposing (Task)'
     'Json.Decode exposing (..)',
     'Json.Encode exposing (encode)',
     'Http',
