@@ -318,7 +318,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       let methodParam = def.operation == 'query' ? `"${verb}" ` : '';
 
       decls.push(new ElmFunctionDecl(
-         funcName, elmParamsDecl, new ElmTypeName(`Http.Request ${resultType}`),
+         funcName, elmParamsDecl, new ElmTypeName(`Task GQLError ${resultType}`),
          {
            // we use awkward variable names to avoid naming collisions with query parameters
            expr: `let graphQLQuery = """${query.replace(/\s+/g, ' ')}""" in\n` +
