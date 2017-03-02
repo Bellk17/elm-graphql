@@ -75,7 +75,6 @@ export function queryToElm(graphql: string, moduleName: string, liveUrl: string,
   let queryDocument = parse(graphql);
   let [decls, expose] = translateQuery(liveUrl, queryDocument, schema, verb);
   return moduleToString(moduleName, expose, [
-    'Task exposing (Task)',
     'Json.Decode exposing (..)',
     'Json.Encode exposing (encode)',
     'Http',
@@ -242,6 +241,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
   }
 
   function walkEnum(enumType: GraphQLEnumType): ElmTypeDecl {
+    console.log(enumType.getValues())
     return new ElmTypeDecl(enumType.name, enumType.getValues().map(v => v.name[0].toUpperCase() + v.name.substr(1)));
   }
 
@@ -249,10 +249,10 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     // might need to be Maybe Episode, with None -> fail in the Decoder
     let decoderTypeName = enumType.name[0].toUpperCase() + enumType.name.substr(1);
     return new ElmFunctionDecl(enumType.name.toLowerCase() + 'Decoder', [], new ElmTypeName('Decoder ' + decoderTypeName),
-        { expr: 'customDecoder string (\\s ->\n' +
+        { expr: 'string |> andThen (\\s ->\n' +
                 '        case s of\n' + enumType.getValues().map(v =>
-                '            "' + v.name + '" -> Ok ' + v.name[0].toUpperCase() + v.name.substr(1)).join('\n') + '\n' +
-                '            _ -> Err "Unknown ' + enumType.name + '")'
+                '            "' + v.name + '" -> succeed ' + v.name[0].toUpperCase() + v.name.substr(1)).join('\n') + '\n' +
+                '            _ -> fail "Unknown ' + enumType.name + '")'
               });
   }
 
@@ -318,7 +318,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       let methodParam = def.operation == 'query' ? `"${verb}" ` : '';
 
       decls.push(new ElmFunctionDecl(
-         funcName, elmParamsDecl, new ElmTypeName(`Task GQLError ${resultType}`),
+         funcName, elmParamsDecl, new ElmTypeName(`Http.Request GQLError ${resultType}`),
          {
            // we use awkward variable names to avoid naming collisions with query parameters
            expr: `let graphQLQuery = """${query.replace(/\s+/g, ' ')}""" in\n` +
@@ -536,7 +536,10 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
 export function typeToElm(type: GraphQLType, isNonNull = false): ElmType {
   let elmType: ElmType;
 
-  if (type instanceof GraphQLScalarType) {
+  if (type instanceof GraphQLNonNull) {
+    elmType = typeToElm(type.ofType, true);
+  }
+  else if (type instanceof GraphQLScalarType) {
     switch (type.name) {
       case 'Int': elmType = new ElmTypeName('Int'); break;
       case 'Float': elmType = new ElmTypeName('Float'); break;
@@ -572,11 +575,11 @@ export function typeToElm(type: GraphQLType, isNonNull = false): ElmType {
 
 export function elmSafeName(graphQlName: string): string {
   switch (graphQlName) {
-    case 'type': return "type'";
-    case 'Task': return "Task'";
-    case 'List': return "List'";
-    case 'Http': return "Http'";
-    case 'GraphQL': return "GraphQL'";
+    case 'type': return "type_";
+    case 'Task': return "Task_";
+    case 'List': return "List_";
+    case 'Http': return "Http_";
+    case 'GraphQL': return "GraphQL_";
     // todo: more...
     default: return graphQlName;
   }
