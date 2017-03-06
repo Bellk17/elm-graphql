@@ -79,7 +79,7 @@ export function queryToElm(graphql: string, moduleName: string, liveUrl: string,
     'Json.Decode exposing (..)',
     'Json.Encode exposing (encode)',
     'Http',
-    'GraphQL.Client as GraphQL exposing (Context, apply, maybeEncode, GQLError)'
+    'GraphQL.Client as GraphQL exposing (Context, apply, maybeEncode, GQLError, Mapper)'
   ], decls);
 }
 
@@ -311,14 +311,18 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       expose.push(resultType);
 
       let elmContextType = new ElmTypeName("Context");
+      let elmMapperType = new ElmTypeName("Mapper error success result");
+      let elmToMsgType = new ElmTypeName("(a -> msg)");
       let elmParamsType = new ElmTypeRecord(parameters.map(p => new ElmFieldDecl(p.name, p.type)));
       let elmContext = new ElmParameterDecl('context', elmContextType);
+      let elmMapper = new ElmParameterDecl('mapper', elmMapperType);
+      let elmToMsg = new ElmParameterDecl('toMsg', elmToMsgType);
       let elmParams = new ElmParameterDecl('params', elmParamsType);
-      let elmParamsDecl = elmParamsType.fields.length > 0 ? [elmContext, elmParams] : [elmContext];
+      let elmParamsDecl = elmParamsType.fields.length > 0 ? [elmContext, elmMapper, elmToMsg, elmParams] : [elmContext];
       let methodParam = def.operation == 'query' ? `"${verb}" ` : '';
 
       decls.push(new ElmFunctionDecl(
-         funcName, elmParamsDecl, new ElmTypeName(`Task GQLError ${resultType}`),
+         funcName, elmParamsDecl, new ElmTypeName(`Cmd msg`),
          {
            // we use awkward variable names to avoid naming collisions with query parameters
            expr: `let graphQLQuery = """${query.replace(/\s+/g, ' ')}""" in\n` +
