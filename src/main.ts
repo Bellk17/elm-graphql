@@ -150,9 +150,9 @@ function processFiles(schema: GraphQLSchema) {
   for (let filePath of paths) {
     let fullpath = path.join(...filePath);
     let graphql = fs.readFileSync(fullpath, 'utf8');
-    let rootindex = fullpath.indexOf("src/");
+    let rootindex = fullpath.indexOf(path.join("src", "/"));
     let rootpath = fullpath.substr(rootindex + 4);
-    let pathdirs = rootpath.split('/');
+    let pathdirs = rootpath.split(path.sep);
     let filepath = pathdirs.map(capitalize).join('.');
     let basename = path.basename(fullpath);
     let extname =  path.extname(fullpath);
