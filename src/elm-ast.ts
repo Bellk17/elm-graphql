@@ -165,7 +165,7 @@ export function importToString(type: ElmImportDecl): string {
     result += ` as ${type.alias}`;
   }
 
-  if (type.exposing) {
+  if (type.exposing.length > 0) {
     result += ` exposing (${type.exposing.join(", ")})`;
   }
 
