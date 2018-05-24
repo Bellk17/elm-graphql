@@ -16,6 +16,7 @@ manipulating strings the entire time.
 /* Types */
 export abstract class ElmType {}
 
+
 // Represents a type name such as "String" or "a"
 export class ElmTypeName extends ElmType {
   constructor(public name: string) {
@@ -23,12 +24,14 @@ export class ElmTypeName extends ElmType {
   }
 }
 
+
 // Represents a type application such as "List Int"
 export class ElmTypeApp  extends ElmType {
   constructor(public name: string, public args: Array<ElmType>) {
     super();
   }
 }
+
 
 // Represents a record type such as "{firstName: String}"
 export class ElmTypeRecord  extends ElmType {
@@ -38,9 +41,17 @@ export class ElmTypeRecord  extends ElmType {
 }
 
 
+// Represents the field in a record type declaration such as the firstName in "{firstName: String}"
+export class ElmFieldDecl {
+  constructor(public name: string,
+              public type: ElmType) {}
+}
+
+
 
 /* Top Level Declarations (The things that can appear left-most unindented in a .elm file like type declarations, import statements, etc. */
 export abstract class ElmDecl {}
+
 
 // Represents a module statement like "module Main exposing (...)"
 export class ElmModuleDecl extends ElmDecl {
@@ -49,6 +60,7 @@ export class ElmModuleDecl extends ElmDecl {
     super();
   }
 }
+
 
 // Represents an import statement like "import Html as H exposing (text, Html)"
 export class ElmImportDecl extends ElmDecl {
@@ -59,6 +71,7 @@ export class ElmImportDecl extends ElmDecl {
   }
 }
 
+
 // Represents a type declaration like "type Msg = Increment | Decrement"
 export class ElmTypeDecl extends ElmDecl {
   constructor(public name: string,
@@ -66,6 +79,7 @@ export class ElmTypeDecl extends ElmDecl {
     super();
   }
 }
+
 
 // Represents a type alias declaration like "type alias Person = {firstName: String}"
 export class ElmTypeAliasDecl extends ElmDecl {
@@ -75,6 +89,7 @@ export class ElmTypeAliasDecl extends ElmDecl {
     super();
   }
 }
+
 
 // Represents a function declaration like "update msg state = ..."
 // Also represents variable declarations like "numberFive = 5" (these declarations have an empty array of parameters)
@@ -87,19 +102,15 @@ export class ElmFunctionDecl extends ElmDecl {
   }
 }
 
-// Represents the field in a record type declaration
-// TODO: This isn't really a top level declaration
-export class ElmFieldDecl {
-  constructor(public name: string,
-              public type: ElmType) {}
-}
 
 // Represents the parameter declaration in a function declaration (the "msg" in "update msg state = ...")
-// TODO: This isn't really a top level declaration
 export class ElmParameterDecl {
   constructor(public name: string,
               public type: ElmType) { }
 }
+
+
+
 
 
 
