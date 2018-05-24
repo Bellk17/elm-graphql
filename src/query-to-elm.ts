@@ -30,6 +30,9 @@ import {
   ElmTypeDecl,
   ElmParameterDecl,
   moduleToString,
+  fileToString,
+  ElmModuleDecl,
+  ElmImportDecl,
   ElmExpr,
   ElmFunctionDecl,
   ElmType,
@@ -105,18 +108,24 @@ export function queryToElm(
 
   let [decls, expose] = translateQuery(liveUrl, queryDocument, schema, verb, errorSpec);
 
-  let importGraphql = 'GraphQL exposing (apply, maybeEncode, query, mutation)';
+  let importGraphql: ElmImportDecl;
 
   if (errorSpec) {
-    importGraphql = 'GraphQLSpec exposing (Response, apply, maybeEncode, query, mutation)';
+    importGraphql = new ElmImportDecl("GraphQL", null, ["apply", "maybeEncode", "query", "mutation"]);
+  } else {
+    importGraphql = new ElmImportDecl("GraphQL", null, ["Response", "apply", "maybeEncode", "query", "mutation"]);
   }
 
-  return moduleToString(moduleName, expose, [
-    'Json.Decode exposing (..)',
-    'Json.Encode exposing (encode)',
-    'Http',
-    importGraphql
-  ], decls);
+  return fileToString(
+    new ElmModuleDecl(moduleName, expose),
+    [
+      new ElmImportDecl("Json.Decode", null, [".."]),
+      new ElmImportDecl("Json.Encode", null, ["encode"]),
+      new ElmImportDecl("Http"),
+      importGraphql
+    ],
+    decls
+  );
 }
 
 

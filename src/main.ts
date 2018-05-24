@@ -74,7 +74,7 @@ if (options.help) {
 // Ensure that an endpoint was provided
 // TODO: Does this make it impossible to use a schema file rather than an endpoint?
 if (!options.endpoint) {
-    console.error('Must specify a graphql endpoint (use option --endpoint');
+    console.error('Must specify a graphql endpoint (use option --endpoint)');
     process.exit(1);
 }
 
