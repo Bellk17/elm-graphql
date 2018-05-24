@@ -108,12 +108,6 @@ else {
 function performIntrospectionQuery(callback: (body: string) => void) {
   let introspectionUrl = options.endpoint;
 
-  if (!introspectionUrl) {
-    // TODO: Does this tool use elm-package.json anymore?
-    console.log('Error: missing graphql endpoint in elm-package.json');
-    process.exit(1);
-  }
-
   // Create the GET or POST request.
   // TODO: Determine if POST actually works. I couldn't get it to.
   let reqOpts = verb == 'GET'
@@ -173,20 +167,13 @@ function processFiles(schema: GraphQLSchema, errorSpec: boolean) {
       process.exit(1)
     }
 
-    // TODO: Remove the requirement of a "src/" directory or make it configurable
-    // This group of declarations computes the .elm output file names and module names
-    let rootindex = fullpath.indexOf("src/");
-    let rootpath = fullpath.substr(rootindex + 4);
-    let pathdirs = rootpath.split('/');
-    let filepath = pathdirs.map(capitalize).join('.');
-    let basename = path.basename(fullpath);
-    let extname =  path.extname(fullpath);
-    let filename = basename.substr(0, basename.length - extname.length);
-    let moduleName = filepath.substr(0, filepath.length - extname.length);
-    let outPath = path.join(path.dirname(fullpath), filename + '.elm');
+    let modulePrefix = filePath.slice(0, -1).map(capitalize).join(".");
+    let moduleName = capitalize(path.parse(filePath[filePath.length - 1]).name);
+    let modulePath = modulePrefix + "." + moduleName;
+    let outPath = path.join(...filePath.slice(0, -1), moduleName + '.elm');
 
     // Compile the GraphQL File to Elm
-    let elm = queryToElm(graphql, moduleName, endpointUrl, verb, schema, errorSpec);
+    let elm = queryToElm(graphql, modulePath, endpointUrl, verb, schema, errorSpec);
     fs.writeFileSync(outPath, elm);
 
     // Format the code if elm-format is available
