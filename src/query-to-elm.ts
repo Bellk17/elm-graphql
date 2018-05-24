@@ -62,19 +62,51 @@ import {
   decoderForFragment
 } from './query-to-decoder';
 
+// TODO:
+//   The logic in this module is a bit weird. What it probably ought to be doing
+//   is walking over the query and extracting all of the enums, fragments, and unions
+//   that are actually used and generating Elm for them. Then generating Elm for
+//   the actual query itself. Instead it's mixing the generation all up in a knot.
+
+// TODO:
+//   In generating module and type names the "capitalize first character" operation
+//   is used often. There should be an easy function for this as the code to do
+//   it is repeated in many places.
+
+// Notes to future readers:
+// - We use Elm's JSON encoder to generate the request document, but not the query text itself since that isn't valid JSON
+//   This includes the wrapper around the query and the list of parameters if they are needed
+// - The info parameter that's passed to basically every function is a stateful object which tracks
+//   a "current location" in the GraphQL schema. It is used to validate typing of the query
+// - The GraphQL module provided by Facebook has a number of super useful things that are used here
+//   including an AST, parser, and printer (converts an AST to a string)
+
+// TODO: Document why these are here
 export type GraphQLEnumMap = { [name: string]: GraphQLEnumType };
 export type GraphQLTypeMap = { [name: string]: GraphQLType };
 export type FragmentDefinitionMap = { [name: string]: FragmentDefinition };
 export type GraphQLUnionMap = { [name: string]: GraphQLUnionType };
 
+// TODO: Document what this is for
 const alphabet = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
                   'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'];
 
-export function queryToElm(graphql: string, moduleName: string, liveUrl: string, verb: string,
-                           schema: GraphQLSchema, errorSpec: boolean): string {
+// Compile the provided GraphQL code to an Elm module, type checking it against the provided GraphQL Schema
+export function queryToElm(
+  graphql: string,       // GraphQL query to parse and generate
+  moduleName: string,    // Name for the Elm module being generated
+  liveUrl: string,       // The endpoint URL (so the generated Elm knows where to query)
+  verb: string,          // HTTP Verb to send a request to the server using
+  schema: GraphQLSchema, // GraphQL Schema to typecheck against
+  errorSpec: boolean     // ???
+): string {
+  // Parse the GraphQL query into a GraphQL AST
   let queryDocument = parse(graphql);
+
   let [decls, expose] = translateQuery(liveUrl, queryDocument, schema, verb, errorSpec);
+
   let importGraphql = 'GraphQL exposing (apply, maybeEncode, query, mutation)';
+
   if (errorSpec) {
     importGraphql = 'GraphQLSpec exposing (Response, apply, maybeEncode, query, mutation)';
   }
@@ -87,41 +119,59 @@ export function queryToElm(graphql: string, moduleName: string, liveUrl: string,
   ], decls);
 }
 
-function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb: string, errorSpec: boolean): [Array<ElmDecl>, Array<string>] {
+
+// Convert the provided GraphQL Document AST into a list of Elm declarations and functions/types that need to be exposed
+// TODO: Convert the Array<string> output from this function into an ElmModule AST type (which doesn't exist yet)
+function translateQuery(
+  uri: string,
+  doc: Document,
+  schema: GraphQLSchema,
+  verb: string,
+  errorSpec: boolean
+): [Array<ElmDecl>, Array<string>] {
+  // List of the functions/types that need to be exposed by this module
   let expose: Array<string> = [];
+
+  // Collection of the fragments defined in this document to be referenced when creating the types/decoders
+  // for queries spreading the fragments
   let fragmentDefinitionMap: FragmentDefinitionMap = {};
 
+  // Convert the given query document into a list of Elm declarations and things for the module to expose
   function walkQueryDocument(doc: Document, info: TypeInfo): [Array<ElmDecl>, Array<string>] {
+    // List of top declarations that need to be created
     let decls: Array<ElmDecl> = [];
+    // Add a variable for the endpoint URL so requests know where to be sent to
     decls.push(new ElmFunctionDecl('endpointUrl', [], new ElmTypeName('String'), { expr: `"${uri}"` }));
 
+    // Get all of the fragments defined in this document
     buildFragmentDefinitionMap(doc);
+
+    // These keep track of the fragments, enums, and unions that have actually been seen
+    // so that they are only output if actually used.
     let seenFragments: FragmentDefinitionMap = {};
     let seenEnums: GraphQLEnumMap = {};
     let seenUnions: GraphQLUnionMap = {};
 
+    // Iterate over every definition in the document pushing their compiled Elm onto the result list
     for (let def of doc.definitions) {
       if (def.kind == 'OperationDefinition') {
         decls.push(...walkOperationDefinition(<OperationDefinition>def, info));
       } else if (def.kind == 'FragmentDefinition') {
         decls.push(...walkFragmentDefinition(<FragmentDefinition>def, info));
       }
+
       collectFragments(def, seenFragments);
       collectEnums(def, seenEnums);
       collectUnions(def, seenUnions);
     }
 
+    // Iterate over each fragment, enum and union that has been seen outputting the relevant Elm
     for (let fragName in seenFragments) {
       let frag = seenFragments[fragName];
       let decodeFragFuncName = fragName[0].toLowerCase() + fragName.substr(1) + 'Decoder';
       let fragTypeName = fragName[0].toUpperCase() + fragName.substr(1);
       let fragTypeNameExt = fragTypeName + '_';
-      //// Outputs decoders for individual fragments (Not currently used)
-      // decls.push(new ElmFunctionDecl(
-      //         decodeFragFuncName, [],
-      //         new ElmTypeName('Decoder ' + fragTypeName),
-      //         decoderForFragment(frag, info, schema, fragmentDefinitionMap, seenFragments) ));
-      // expose.push(decodeFragFuncName);
+      // TODO: Output a decoder for fragments rather than expanding it again and again each time it is used
       expose.push(fragTypeName);
       expose.push(fragTypeNameExt);
     }
@@ -142,7 +192,9 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     return [decls, expose];
   }
 
+  // Pull the fragment definitions out of the provided document and put them into the fragment map
   function buildFragmentDefinitionMap(doc: Document): void {
+    // Visit every node in the AST, checking if they are a fragment and adding them to the map if so
     visit(doc, {
       enter: function(node) {
         if (node.kind == 'FragmentDefinition') {
@@ -155,6 +207,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     });
   }
 
+  // Add a fragment from the list of document fragments to the provided map
   function collectFragments(def: Definition, fragments: FragmentDefinitionMap = {}): FragmentDefinitionMap {
     visit(doc, {
       enter: function(node) {
@@ -187,12 +240,14 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     }
     return fragments;
   }
-  
+
+  // Add a union from the document to the provided union map
+  // TODO: Why does this take a Definition?
   function collectUnions(def: Definition, unions: GraphQLUnionMap = {}): GraphQLUnionMap {
     let info = new TypeInfo(schema);
     visit(doc, {
       enter: function(node, key, parent) {
-        let parentType = <GraphQLUnionType> info.getType();
+        let parentType: any = info.getType();
         if (parentType instanceof GraphQLNonNull) {
           parentType = parentType['ofType']
         }
@@ -214,6 +269,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     return unions;
   }
 
+  // Add an enum from the document to the provided enum map
   function collectEnums(def: Definition, enums: GraphQLEnumMap = {}): GraphQLEnumMap {
     let info = new TypeInfo(schema);
     visit(doc, {
@@ -225,7 +281,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
           let type = info.getType();
           collectEnumsForType(type, enums);
         }
-        // todo: do we need to walk into fragment spreads?
+        // TODO: do we need to walk into fragment spreads?
       },
       leave: function(node, key, parent) {
         info.leave(node);
@@ -234,19 +290,23 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     return enums;
   }
 
+  // 
   function collectEnumsForType(type: GraphQLType, seen: GraphQLEnumMap = {}, seenTypes: GraphQLTypeMap = {}): void {
     if (type instanceof GraphQLEnumType) {
       seen[type.name] = type;
     } else if (type instanceof GraphQLList) {
       collectEnumsForType(type.ofType, seen, seenTypes);
-    } else if (type instanceof GraphQLObjectType ||
-               type instanceof GraphQLInterfaceType ||
-               type instanceof GraphQLInputObjectType) {
+    } else if (
+      type instanceof GraphQLObjectType
+      || type instanceof GraphQLInterfaceType
+      || type instanceof GraphQLInputObjectType
+    ) {
       if (seenTypes[type.name]) {
         return;
       } else {
         seenTypes[type.name] = type;
       }
+
       let fieldMap = type.getFields();
       for (let fieldName in fieldMap) {
         let field = fieldMap[fieldName];
@@ -257,27 +317,36 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     }
   }
 
+
   function walkEnum(enumType: GraphQLEnumType): ElmTypeDecl {
-    return new ElmTypeDecl(enumType.name, enumType.getValues().map(v => enumType.name + '_' + v.name[0].toUpperCase() + v.name.substr(1).toLowerCase()));
+    return new ElmTypeDecl(
+      enumType.name,
+      enumType.getValues()
+        .map(v => enumType.name + '_' + v.name[0].toUpperCase() + v.name.substr(1).toLowerCase()));
   }
+
 
   function decoderForEnum(enumType: GraphQLEnumType): ElmFunctionDecl {
     // might need to be Maybe Episode, with None -> fail in the Decoder
     let decoderTypeName = enumType.name[0].toUpperCase() + enumType.name.substr(1);
-    return new ElmFunctionDecl(enumType.name.toLowerCase() + 'Decoder', [], new ElmTypeName('Decoder ' + decoderTypeName),
+    return new ElmFunctionDecl(
+        enumType.name.toLowerCase() + 'Decoder',
+        [],
+        new ElmTypeName('Decoder ' + decoderTypeName),
         { expr: 'string |> andThen (\\s ->\n' +
-                '        case s of\n' + enumType.getValues().map(v =>
-                '            "' + v.name + '" -> succeed ' + decoderTypeName + '_' + v.name[0].toUpperCase() + v.name.substr(1).toLowerCase()).join('\n') + '\n' +
-                '            _ -> fail "Unknown ' + enumType.name + '")'
-              });
+          '        case s of\n' + enumType.getValues().map(v =>
+          '            "' + v.name + '" -> succeed ' + decoderTypeName + '_' + v.name[0].toUpperCase() + v.name.substr(1).toLowerCase()).join('\n') + '\n' +
+          '            _ -> fail "Unknown ' + enumType.name + '")'
+        });
   }
+
 
   function walkUnion(union: GraphQLUnionType, info: TypeInfo): Array<ElmDecl> {
     if (union instanceof GraphQLNonNull) {
-      union = union['ofType'];
+      union = <GraphQLUnionType> union['ofType'];
     }
     if (union instanceof GraphQLList) {
-        union = union['ofType']
+        union = <GraphQLUnionType> union['ofType']
     }
     let types = union.getTypes();
     let params = types.map((t, i) => alphabet[i]).join(' ');
@@ -285,15 +354,20 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     decls.push(new ElmTypeDecl(union.name + ' ' + params, types.map((t, i) => elmSafeName(union.name+'_'+t.name) + ' ' + alphabet[i])));
     return decls;
   }
-  
+
+
+  // TODO: This code seems very similar to the walkOperation function
+  // in query-to-decoder. Is there something useful to abstract?
   function walkOperationDefinition(def: OperationDefinition, info: TypeInfo): Array<ElmDecl> {
     info.enter(def);
+
     if (!info.getType()) {
       throw new Error(`GraphQL schema does not define ${def.operation} '${def.name.value}'`);
     }
+
     if (def.operation == 'query' || def.operation == 'mutation') {
       let decls: Array<ElmDecl> = [];
-      // Name
+
       let name: string;
       if (def.name) {
         name = def.name.value;
@@ -305,12 +379,15 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       if(errorSpec) {
         responseType = "(Response " + resultType + ")";
       }
-      // todo: Directives
-      // SelectionSet
+
+      // TODO: Directives
+
       let [fields, spreads] = walkSelectionSet(def.selectionSet, info);
-      // todo: use spreads...
+
+      // TODO: use spreads...
+
       decls.push(new ElmTypeAliasDecl(resultType, new ElmTypeRecord(fields)))
-      // VariableDefinition
+
       let parameters: Array<{name: string, type: ElmType, schemaType: GraphQLType, hasDefault:boolean}> = [];
       if (def.variableDefinitions) {
         for (let varDef of def.variableDefinitions) {
@@ -328,6 +405,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       // grabs all fragment dependencies in the query
       let qFragments = queryFragments(def.selectionSet);
 
+      // Generate the string that will actually be output
       let query = '';
       for (let name in qFragments) {
         query += print(qFragments[name]) + ' ';
@@ -373,11 +451,12 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
          decodeFuncName, [],
          new ElmTypeName('Decoder ' + resultTypeName),
          decoderForQuery(def, info, schema, fragmentDefinitionMap, seenFragments) ));
-      
+
       info.leave(def);
       return decls;
     }
   }
+
 
   function encoderForInputType(type: GraphQLType, isNonNull?: boolean, path?: string): string {
     let encoder: string;
@@ -387,7 +466,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     if (type instanceof GraphQLNonNull) {
       type = type['ofType'];
     } else {
-      isMaybe = true;    
+      isMaybe = true;
       value = 'o';
     }
 
@@ -413,12 +492,12 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
         default: encoder = 'Json.Encode.string ' + value; break;
       }
     } else if (type instanceof  GraphQLEnumType) {
+      const name = type.name;
       const values = type.getValues()
-      const tuples = values.map((v) => `("${type.name + '_' + v.name[0].toUpperCase() + v.name.substr(1).toLowerCase()}", "${v.name}")`)
+      const tuples = values.map((v) => `("${name + '_' + v.name[0].toUpperCase() + v.name.substr(1).toLowerCase()}", "${v.name}")`)
       const map = `[${tuples.join(',')}]`
       encoder = `Json.Encode.string <| Maybe.withDefault "" <| Maybe.map Tuple.second <| List.head <| (\\s -> List.filter (Tuple.first >> (==)(s)) ${map} ) <| toString ` + value;
     } else {
-
       throw new Error('not implemented: ' + type.constructor.name);
     }
 
@@ -459,18 +538,18 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     info.enter(selSet);
     let fields: Array<ElmFieldDecl> = [];
     let spreads: Array<string> = [];
-    let info_type = info.getType();
+    let info_type: any = info.getType();
 
     if (info_type instanceof GraphQLNonNull) {
-        info_type = info_type['ofType']
+        info_type = info_type['ofType'];
     }
 
     if (info_type instanceof GraphQLList) {
-        info_type = info_type['ofType']
+        info_type = info_type['ofType'];
     }
 
     if (info_type instanceof GraphQLNonNull) {
-        info_type = info_type['ofType']
+        info_type = info_type['ofType'];
     }
 
     if (info_type instanceof GraphQLUnionType) {
@@ -497,7 +576,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
   }
   
   function walkUnionSelectionSet(selSet: SelectionSet, info: TypeInfo): ElmType {
-    let union = <GraphQLUnionType>info.getType();
+    let union: any = <GraphQLUnionType>info.getType();
     let hasTypename = false;
 
       if (union instanceof GraphQLNonNull) {
@@ -574,7 +653,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
   function walkField(field: Field, info: TypeInfo): ElmFieldDecl {
     info.enter(field);
 
-    let info_type = info.getType()
+    let info_type: any = info.getType()
     // Name
     let name = elmSafeName(field.name.value);
     // Alias
@@ -588,9 +667,9 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
     if (field.selectionSet) {
       let isMaybe = false
       if (info_type instanceof GraphQLNonNull) {
-	    info_type = info_type['ofType']
+        info_type = info_type['ofType'];
       } else {
-	    isMaybe = true
+        isMaybe = true
       }
 
       let isList = info_type instanceof GraphQLList;
@@ -623,6 +702,7 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       return new ElmFieldDecl(name, type)
     }
   }
+
   return walkQueryDocument(doc, new TypeInfo(schema));
 }
 
@@ -667,6 +747,12 @@ export function typeToElm(type: GraphQLType, isNonNull = false): ElmType {
   return elmType;
 }
 
+
+// Convert the provided GraphQL safe name to an Elm safe name
+// The GraphQL Spec allows names that Elm either doesn't support or the coding
+// standard frowns upon.
+// TODO: Document why Task, List, Http, and GraphQL are converted.
+// TODO: Extract this to a utilities file since it is used both here and query-to-decoder.ts
 export function elmSafeName(graphQlName: string): string {
   switch (graphQlName) {
     case '__typename': return 'typename_';
@@ -675,7 +761,7 @@ export function elmSafeName(graphQlName: string): string {
     case 'List': return "List_";
     case 'Http': return "Http_";
     case 'GraphQL': return "GraphQL_";
-    // todo: more...
+    // TODO: more...
     default: return graphQlName;
   }
 }
