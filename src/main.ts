@@ -20,13 +20,6 @@ import { queryToElm } from './query-to-elm';
 import { validate } from 'graphql/validation';
 import * as Lang from 'graphql/language';
 
-// The program begins here
-
-// TODO:
-//   All of these files declare "All rights reserved." to John Hewson.
-//   Could we get him to release the rights under a more permissive
-//   agreement such as MIT?
-
 // TODO:
 //   This file is a mixture of inline scripting style code and functions.
 //   That isn't a problem in and of itself, but the structure of the code
@@ -62,7 +55,6 @@ let options: any = commandLineArgs([
   { name: 'schema', type: String },
   { name: 'method', type: String },
   { name: 'help', type: Boolean },
-  { name: 'error-spec', type: Boolean },
 ]);
 
 // Print the usage information if requested
@@ -81,7 +73,6 @@ if (!options.endpoint) {
 
 let verb = options.method || 'GET';
 let endpointUrl = options.endpoint;
-let errorSpec = options['error-spec'];
 
 
 // Parse the graphql schema from a file
@@ -89,7 +80,7 @@ if (options.schema) {
     const filepath = path.resolve(options.schema);
     const obj = require(filepath);
     let schema = buildClientSchema(obj.data)
-    processFiles(schema, errorSpec);
+    processFiles(schema);
 }
 
 
@@ -98,7 +89,7 @@ else {
     performIntrospectionQuery(body => {
         let result = JSON.parse(body);
         let schema = buildClientSchema(result.data);
-        processFiles(schema, errorSpec);
+        processFiles(schema);
     });
 }
 
@@ -148,7 +139,7 @@ function capitalize(str: string): string {
 // Read .graphql files from disk and generate Elm modules which
 // perform the indicated queries.
 // TODO: This function actually does alot. May want to split out the directory scanning part.
-function processFiles(schema: GraphQLSchema, errorSpec: boolean) {
+function processFiles(schema: GraphQLSchema) {
   // Get the list of .graphql files in this and all sub-directories
   let paths = scanDir('.', []);
 
