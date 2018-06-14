@@ -87,7 +87,6 @@ export function decoderForFragment(
 
 // Notes to aid future readers:
 // - A GraphQL Operation is a query or a mutation.
-// - I believe the TypeInfo parameters are used to provide more helpful error messages
 
 // TODO: Why does this declare a bunch of local functions?
 export function decoderFor(

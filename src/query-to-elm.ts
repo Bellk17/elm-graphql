@@ -77,11 +77,11 @@ import {
 //   it is repeated in many places.
 
 // Notes to future readers:
-// - We use Elm's JSON encoder to generate the request document, but not the query text itself since that isn't valid JSON
+// * We use Elm's JSON encoder to generate the request document, but not the query text itself since that isn't valid JSON
 //   This includes the wrapper around the query and the list of parameters if they are needed
-// - The info parameter that's passed to basically every function is a stateful object which tracks
+// * The info parameter that's passed to basically every function is a stateful object which tracks
 //   a "current location" in the GraphQL schema. It is used to validate typing of the query
-// - The GraphQL module provided by Facebook has a number of super useful things that are used here
+// * The GraphQL module provided by Facebook has a number of super useful things that are used here
 //   including an AST, parser, and printer (converts an AST to a string)
 
 // TODO: Document why these are here
@@ -100,21 +100,14 @@ export function queryToElm(
   moduleName: string,    // Name for the Elm module being generated
   liveUrl: string,       // The endpoint URL (so the generated Elm knows where to query)
   verb: string,          // HTTP Verb to send a request to the server using
-  schema: GraphQLSchema, // GraphQL Schema to typecheck against
-  errorSpec: boolean     // ???
+  schema: GraphQLSchema  // GraphQL Schema to typecheck against
 ): string {
   // Parse the GraphQL query into a GraphQL AST
   let queryDocument = parse(graphql);
 
-  let [decls, expose] = translateQuery(liveUrl, queryDocument, schema, verb, errorSpec);
+  let [decls, expose] = translateQuery(liveUrl, queryDocument, schema, verb);
 
-  let importGraphql: ElmImportDecl;
-
-  if (errorSpec) {
-    importGraphql = new ElmImportDecl("GraphQL", null, ["apply", "maybeEncode", "query", "mutation"]);
-  } else {
-    importGraphql = new ElmImportDecl("GraphQL", null, ["Response", "apply", "maybeEncode", "query", "mutation"]);
-  }
+  let importGraphql: ElmImportDecl = new ElmImportDecl("GraphQL", null, ["apply", "maybeEncode", "query", "mutation"]);
 
   return fileToString(
     new ElmModuleDecl(moduleName, expose),
@@ -135,8 +128,7 @@ function translateQuery(
   uri: string,
   doc: Document,
   schema: GraphQLSchema,
-  verb: string,
-  errorSpec: boolean
+  verb: string
 ): [Array<ElmDecl>, Array<string>] {
   // List of the functions/types that need to be exposed by this module
   let expose: Array<string> = [];
@@ -385,9 +377,6 @@ function translateQuery(
       }
       let resultType = name[0].toUpperCase() + name.substr(1);
       let responseType = resultType;
-      if(errorSpec) {
-        responseType = "(Response " + resultType + ")";
-      }
 
       // TODO: Directives
 

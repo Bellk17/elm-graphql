@@ -169,11 +169,11 @@ function processFiles(schema: GraphQLSchema, errorSpec: boolean) {
 
     let modulePrefix = filePath.slice(0, -1).map(capitalize).join(".");
     let moduleName = capitalize(path.parse(filePath[filePath.length - 1]).name);
-    let modulePath = modulePrefix + "." + moduleName;
+    let modulePath = (modulePrefix.length > 0) ? modulePrefix + "." + moduleName : moduleName;
     let outPath = path.join(...filePath.slice(0, -1), moduleName + '.elm');
 
     // Compile the GraphQL File to Elm
-    let elm = queryToElm(graphql, modulePath, endpointUrl, verb, schema, errorSpec);
+    let elm = queryToElm(graphql, modulePath, endpointUrl, verb, schema);
     fs.writeFileSync(outPath, elm);
 
     // Format the code if elm-format is available
@@ -196,7 +196,7 @@ function processFiles(schema: GraphQLSchema, errorSpec: boolean) {
 // The parts parameter is used as part of the recursive state-keeping, so always
 // pass an empty array to it.
 function scanDir(dirpath: string, parts: Array<string>): Array<Array<string>> {
-  // TODO: Would this be simplier using higher-order list functions?
+  // TODO: Would this be simpler using higher-order list functions?
   let filenames = fs.readdirSync(dirpath);
   let found: Array<Array<string>> = [];
 
