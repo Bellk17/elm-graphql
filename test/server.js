@@ -28,7 +28,7 @@ var typeDefinition = [`
   }
 
   type RootQuery {
-    user(id: ID): User
+    user(id: ID): User!
     test1: Foo
     test2: Foo
   }

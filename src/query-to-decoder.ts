@@ -53,22 +53,49 @@ import {
   typeToElm
 } from './query-to-elm';
 
-export function decoderForQuery(def: OperationDefinition, info: TypeInfo,
-                                schema: GraphQLSchema, fragmentDefinitionMap: FragmentDefinitionMap,
-                                seenFragments: FragmentDefinitionMap): ElmExpr {
+
+// TODO: Why are these next two function necessary?
+// TODO: This module does some weird type splitting and unifying. Is there a simpler way?
+// TODO: Document the structure of the output Elm decoder
+// TODO: It may be possible to simplify this code if it is written to work with a Decoder AST type rather than the lower level AST types it currently uses
+
+// Generate an Elm JSON decoder for the provided GraphQL query
+export function decoderForQuery(
+  def: OperationDefinition,
+  info: TypeInfo,
+  schema: GraphQLSchema,
+  fragmentDefinitionMap: FragmentDefinitionMap,
+  seenFragments: FragmentDefinitionMap
+): ElmExpr {
   return decoderFor(def, info, schema, fragmentDefinitionMap, seenFragments);
 }
 
-export function decoderForFragment(def: FragmentDefinition, info: TypeInfo,
-                                schema: GraphQLSchema, fragmentDefinitionMap: FragmentDefinitionMap,
-                                seenFragments: FragmentDefinitionMap): ElmExpr {
+
+// Generate an Elm JSON decoder for the provided GraphQL Fragment
+export function decoderForFragment(
+  def: FragmentDefinition,
+  info: TypeInfo,
+  schema: GraphQLSchema,
+  fragmentDefinitionMap: FragmentDefinitionMap,
+  seenFragments: FragmentDefinitionMap
+): ElmExpr {
   return decoderFor(def, info, schema, fragmentDefinitionMap, seenFragments);
 }
 
-export function decoderFor(def: OperationDefinition | FragmentDefinition, info: TypeInfo,
-                           schema: GraphQLSchema, fragmentDefinitionMap: FragmentDefinitionMap,
-                           seenFragments: FragmentDefinitionMap): ElmExpr {
 
+// Generate an Elm JSON Decoder fort the provided GraphQL Query or Fragment.
+
+// Notes to aid future readers:
+// - A GraphQL Operation is a query or a mutation.
+
+// TODO: Why does this declare a bunch of local functions?
+export function decoderFor(
+  def: OperationDefinition | FragmentDefinition,
+  info: TypeInfo,
+  schema: GraphQLSchema,
+  fragmentDefinitionMap: FragmentDefinitionMap, // During compilation of a query fragments are spread. This contains the list of fragment definitions used for spreading
+  seenFragments: FragmentDefinitionMap
+): ElmExpr {
   function walkDefinition(def: OperationDefinition | FragmentDefinition, info: TypeInfo) {
     if (def.kind == 'OperationDefinition') {
       return walkOperationDefinition(<OperationDefinition>def, info);
@@ -77,85 +104,123 @@ export function decoderFor(def: OperationDefinition | FragmentDefinition, info: 
     }
   }
 
+
+  // Convert the provided GraphQL operation to an Elm Expression
   function walkOperationDefinition(def: OperationDefinition, info: TypeInfo): ElmExpr {
     info.enter(def);
+
+    // There are only two types of operations defined in the GraphQL spec: Query and Mutation.
+    // However, the GraphQL parsing library being used here also supports subscriptions.
+    // We just ignore those. May be neat to add support for them at some point though using
+    // elm's websocket support?
     if (def.operation == 'query' || def.operation == 'mutation') {
       let decls: Array<ElmDecl> = [];
-      // Name
+
       let name: string;
       if (def.name) {
         name = def.name.value;
       } else {
         name = 'AnonymousQuery';
       }
+
+      // Create the name of the Elm type which will be returned from this operation
       let resultType = name[0].toUpperCase() + name.substr(1);
-      // todo: Directives
-      // SelectionSet
+
+      // TODO: Support for directives
+
+      // Get the list of selected fields
       let expr = walkSelectionSet(def.selectionSet, info);
-      // VariableDefinition
+
+      // List of field names for the result record type
       let parameters: Array<ElmParameterDecl> = [];
+
       if (def.variableDefinitions) {
         for (let varDef of def.variableDefinitions) {
           let name = varDef.variable.name.value;
 
           let type = typeToString(typeToElm(typeFromAST(schema, varDef.type)), 0);
-          // todo: default value
+
+          // TODO: Support for default values
+
           parameters.push({ name, type });
         }
       }
+
       info.leave(def);
-      
+
       return { expr: 'map ' + resultType + ' ' + expr.expr };
     }
   }
 
+
+  // Convert the provided GraphQL Fragment to an Elm expression
   function walkFragmentDefinition(def: FragmentDefinition, info: TypeInfo): ElmExpr {
     info.enter(def);
 
     let name = def.name.value;
-
     let decls: Array<ElmDecl> = [];
     let resultType = name[0].toUpperCase() + name.substr(1);
 
-    // todo: Directives
+    // TODO: Support GraphQL Directives
 
-    // SelectionSet
     let fields = walkSelectionSet(def.selectionSet, info);
-
     let fieldNames = getSelectionSetFields(def.selectionSet, info);
     let shape = `(\\${fieldNames.join(' ')} -> { ${fieldNames.map(f => f + ' = ' + f).join(', ')} })`;
-    
+
     info.leave(def);
+
     return { expr: 'map ' + shape + ' ' + fields.expr };
   }
 
+
+  // Convert the selection set (the stuff between the braces a GraphQL query) into an Elm Expression
+  // TODO: There seems to be some duplicated code between this function and getSelectionSetFields
   function walkSelectionSet(selSet: SelectionSet, info: TypeInfo, seenFields: Array<string> = []): ElmExpr {
     info.enter(selSet);
+
     let fields: Array<ElmExpr> = [];
+
     for (let sel of selSet.selections) {
+      // A selection can be either a regular field, a fragment spread, or an inline fragment
+      // Expand a regular field
       if (sel.kind == 'Field') {
         let field = <Field>sel;
         var name = field.alias == null ? field.name.value : field.alias.value;
+
+        // Ignore duplicate fields. The GraphQL spec allows this for some reason?
         if (seenFields.indexOf(name) == -1) {
           fields.push(walkField(field, info));
           seenFields.push(name);
         }
-      } else if (sel.kind == 'FragmentSpread') {
-        // expand out all fragment spreads
+      }
+
+      // Expand fragment spread
+      else if (sel.kind == 'FragmentSpread') {
         let spreadName = (<FragmentSpread>sel).name.value;
-        let def = fragmentDefinitionMap[spreadName];
-        fields.push(walkSelectionSet(def.selectionSet, info, seenFields));
-      } else if (sel.kind == 'InlineFragment') {
+        let fragmentDef = fragmentDefinitionMap[spreadName];
+        fields.push(walkSelectionSet(fragmentDef.selectionSet, info, seenFields));
+      }
+
+      // Expand an Inline Fragment
+      // TODO: Document why this should not happen
+      else if (sel.kind == 'InlineFragment') {
         throw new Error('Should not happen');
       }
     }
+
     info.leave(selSet);
+
+    // TODO: Document why we filter for e.length > 0
     return { expr: fields.map(f => f.expr).filter(e => e.length > 0).join('\n        |> apply ') }
   }
 
+
+  // Get the list of fields for the provided selection set
   function getSelectionSetFields(selSet: SelectionSet, info: TypeInfo): Array<string> {
     info.enter(selSet);
+
     let fields: Array<string> = [];
+
     for (let sel of selSet.selections) {
       if (sel.kind == 'Field') {
         let field = <Field>sel;
@@ -183,64 +248,76 @@ export function decoderFor(def: OperationDefinition | FragmentDefinition, info: 
     return fields;
   }
 
+
+  // Convert a nested query field into an elm expression
+  // TODO: This function could probably be more clearly written if made less procedural
   function walkField(field: Field, info: TypeInfo): ElmExpr {
     info.enter(field);
-    // Name
+
     let name = elmSafeName(field.name.value);
     let originalName = field.name.value;
+    let typeInfo: any = info.getType();
+    let isMaybe = false;
 
-    let info_type = info.getType()
-    let isMaybe = false
-    if (info_type instanceof GraphQLNonNull) {
-      info_type = info_type['ofType'];
+    // Output a maybe type if the GraphQL type is nullable
+    if (typeInfo instanceof GraphQLNonNull) {
+      typeInfo = typeInfo['ofType'];
     } else {
       isMaybe = true;
     }
-    // Alias
+
+    // Output the alias name rather than the actual field name if one exists
     if (field.alias) {
       name = elmSafeName(field.alias.value);
       originalName = field.alias.value;
     }
 
-    // Arguments (opt)
-    let args = field.arguments; // e.g. id: "1000"
+    // TODO: Document why arguments are handled here and how they influence the output decoder
+    let args = field.arguments;
 
+    // TODO: Move this prefix declaration to the top with all the other declarations?
     let prefix = '';
-    if (info_type instanceof GraphQLList) {
-      info_type = info_type['ofType'];
+    if (typeInfo instanceof GraphQLList) {
+      typeInfo = typeInfo['ofType'];
       prefix = 'list ';
     }
 
-      if (info_type instanceof GraphQLNonNull) {
-        info_type = info_type['ofType'];
-      }
+    if (typeInfo instanceof GraphQLNonNull) {
+      typeInfo = typeInfo['ofType'];
+    }
 
-    if (info_type instanceof GraphQLUnionType) {
-      // Union
+    // A union must be walked in a special way.
+    // A scalar must be generated directly.
+    // All other types have a selection set that must be walked.
+    // TODO: Reconstruct these weirdly nested conditionals. It would be clearer to condition on every possible type
+    if (typeInfo instanceof GraphQLUnionType) {
       let expr = walkUnion(originalName, field, info);
-
       return expr;
     } else {
-      // SelectionSet
       if (field.selectionSet) {
         let fields = walkSelectionSet(field.selectionSet, info);
+
+        // TODO: Why is this here instead of just before the return like all the other methods?
         info.leave(field);
+
         let fieldNames = getSelectionSetFields(field.selectionSet, info);
         let shape = `(\\${fieldNames.join(' ')} -> { ${fieldNames.map(f => f + ' = ' + f).join(', ')} })`;
         let left = '(field "' + originalName + '" \n';
         let right = '(map ' + shape + ' ' + fields.expr + '))';
+
+        // TODO: Should this be using the makeIndent function in elm-ast?
         let indent = '        ';
         if (prefix) {
-	      right = '(' + prefix + right + ')';
-	    }
-	    if (isMaybe) {
-	      right = '(' + 'maybe ' + right + ')';
-	    }
+          right = '(' + prefix + right + ')';
+        }
+
+        if (isMaybe) {
+          right = '(' + 'maybe ' + right + ')';
+        }
 
         return { expr: left + indent + right };
       } else {
-
-        let decoder = leafTypeToDecoder(info_type);
+        let decoder = leafTypeToDecoder(typeInfo);
 
         let right = '(field "' + originalName + '" (' + prefix + decoder +'))';
 
@@ -254,16 +331,21 @@ export function decoderFor(def: OperationDefinition | FragmentDefinition, info: 
     }
   }
 
+
+  // Generate an Elm Decoder for the provided union
   function walkUnion(originalName: string, field: Field, info: TypeInfo): ElmExpr {
     let decoder = '\n        (\\typename -> case typename of';
     let indent = '            ';
 
-    let union_type = info.getType();
+    let union_type: any = info.getType();
     let union_name = "";
 
     let prefix = "";
     let isMaybe = true;
 
+    // TODO:
+    //   These ifs are unwrapping non nullables and list types to their base types.
+    //   Does it handle nested lists?
     if (union_type instanceof GraphQLNonNull) {
       union_type = union_type['ofType'];
       isMaybe = false;
@@ -290,32 +372,33 @@ export function decoderFor(def: OperationDefinition | FragmentDefinition, info: 
         info.enter(inlineFragment);
         let fields = walkSelectionSet(inlineFragment.selectionSet, info);
         info.leave(inlineFragment);
+
         let fieldNames = getSelectionSetFields(inlineFragment.selectionSet, info);
-        let ctor = elmSafeName((union_name+'_'+inlineFragment.typeCondition.name.value));
+        let ctor = elmSafeName((union_name + '_' + inlineFragment.typeCondition.name.value));
         let shape = `(\\${fieldNames.join(' ')} -> ${ctor} { ${fieldNames.map(f => f + ' = ' + f).join(', ')} })`;
         let right = '(map ' + shape + ' ' + fields.expr.split('\n').join(' ') + '\n)';
         decoder += right;
-
       } else if (sel.kind == 'Field') {
         let field = <Field>sel;
+
         if (field.name.value != '__typename') {
           throw new Error('Unexpected field: ' + field.name.value);
         }
       } else if (sel.kind == 'FragmentSpread') {
-        // expand out all fragment spreads
-          let spreadName = (<FragmentSpread>sel).name.value;
-          let def = fragmentDefinitionMap[spreadName];
-          let name = def.typeCondition.name.value;
-          decoder += `\n${indent}"${name}" -> `;
+        let spreadName = (<FragmentSpread>sel).name.value;
+        let def = fragmentDefinitionMap[spreadName];
+        let name = def.typeCondition.name.value;
+        decoder += `\n${indent}"${name}" -> `;
 
-          info.enter(def)
-          let fields = walkSelectionSet(def.selectionSet, info);
-          let fieldNames = getSelectionSetFields(def.selectionSet, info);
-          info.leave(def)
-          let ctor = elmSafeName((union_name+'_'+name));
-          let shape = `(\\${fieldNames.join(' ')} -> ${ctor} { ${fieldNames.map(f => f + ' = ' + f).join(', ')} })`;
-          let right = '(map ' + shape + ' ' + fields.expr.split('\n').join(' ') + '\n)';
-          decoder += right;
+        info.enter(def)
+        let fields = walkSelectionSet(def.selectionSet, info);
+        let fieldNames = getSelectionSetFields(def.selectionSet, info);
+        info.leave(def)
+
+        let ctor = elmSafeName((union_name+'_'+name));
+        let shape = `(\\${fieldNames.join(' ')} -> ${ctor} { ${fieldNames.map(f => f + ' = ' + f).join(', ')} })`;
+        let right = '(map ' + shape + ' ' + fields.expr.split('\n').join(' ') + '\n)';
+        decoder += right;
       } else {
         throw new Error('Unexpected: ' + sel.kind);
       }
@@ -328,6 +411,7 @@ export function decoderFor(def: OperationDefinition | FragmentDefinition, info: 
     if (prefix) {
         decoder = '(' + prefix + decoder + ')';
     }
+
     if (isMaybe) {
         decoder = '(' + 'maybe ' + decoder + ')';
     }
@@ -335,13 +419,14 @@ export function decoderFor(def: OperationDefinition | FragmentDefinition, info: 
     return { expr: '(field "' + originalName + '" ' + decoder +')' };
   }
 
-  function leafTypeToDecoder(type: GraphQLType): string {
 
+  // Create an Elm decoder for the given leaf (non-nested) type
+  // TODO: Why doesn't this return an ElmExpr?
+  function leafTypeToDecoder(type: GraphQLType): string {
     if (type instanceof GraphQLNonNull) {
       type = type['ofType'];
     }
 
-    // leaf types only
     if (type instanceof GraphQLScalarType) {
       switch (type.name) {
         case 'Int': return 'int';
