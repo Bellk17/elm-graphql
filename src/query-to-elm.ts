@@ -272,6 +272,18 @@ function translateQuery(
 
   // Add an enum from the document to the provided enum map
   function collectEnums(def: Definition, enums: GraphQLEnumMap = {}): GraphQLEnumMap {
+
+    // Scan operation variables for enums.
+    if(def.kind == 'OperationDefinition') {
+      let operationDef = <OperationDefinition> def;
+      if (operationDef.variableDefinitions) {
+          for (let varDef of operationDef.variableDefinitions) {
+              let schemaType = typeFromAST(schema, varDef.type);
+              collectEnumsForType(schemaType, enums);
+          }
+      }
+    }
+
     let info = new TypeInfo(schema);
     visit(doc, {
       enter: function(node, key, parent) {
@@ -414,9 +426,47 @@ function translateQuery(
       expose.push(funcName);
       expose.push(resultType);
 
-      let elmParamsType = new ElmTypeRecord(parameters.map(p => new ElmFieldDecl(p.name, p.type)));
-      let elmParams = new ElmParameterDecl('params', elmParamsType);
-      let elmParamsDecl = elmParamsType.fields.length > 0 ? [elmParams] : [];
+      let elmParamsType = new ElmTypeRecord(parameters.map(p => {
+
+        let schemaType = p.schemaType;
+
+        if (schemaType instanceof GraphQLNonNull) {
+          schemaType = schemaType['ofType']
+        }
+
+        if (schemaType instanceof GraphQLList) {
+          schemaType = schemaType['ofType']
+        }
+
+        if (schemaType instanceof GraphQLNonNull) {
+          schemaType = schemaType['ofType']
+        }
+
+        if (schemaType instanceof GraphQLScalarType) {
+          return new ElmFieldDecl(p.name, p.type);
+        } else {
+
+          // Generate type for input object
+          let name = resultType + "_Input_" + p.name[0].toUpperCase() + p.name.substr(1);
+          decls.push(new ElmTypeAliasDecl(name, p.type, []));
+          expose.push(name);
+
+          // Reference generated type
+          return new ElmFieldDecl(p.name, new ElmTypeName(resultType + "_Input_" + p.name[0].toUpperCase() + p.name.substr(1)));
+        }
+      }));
+
+      // Expose / reference input type for query
+      let elmParamsDecl = [];
+      if(elmParamsType.fields.length > 0) {
+          let elmParams = new ElmParameterDecl('params', new ElmTypeName(resultType + "_Input"));
+          elmParamsDecl = [elmParams];
+
+          let paramName = resultType + "_Input";
+          decls.push(new ElmTypeAliasDecl(paramName, elmParamsType, []));
+          expose.push(paramName);
+      }
+
       let methodParam = def.operation == 'query' ? `"${verb}" ` : '';
 
       decls.push(new ElmFunctionDecl(
