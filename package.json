@@ -14,7 +14,7 @@
   "license": "BSD",
   "dependencies": {
     "command-line-args": "^3.0.1",
-    "graphql": "^0.6.2",
+    "graphql": "0.6.2",
     "request": "^2.69.0",
     "source-map-support": "^0.4.0"
   },
