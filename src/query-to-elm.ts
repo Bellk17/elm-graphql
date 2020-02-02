@@ -434,7 +434,6 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
 
   function encoderForInputType(depth: number, type: GraphQLType, isNonNull?: boolean, path?: string): string {
     let encoder: string;
-
     let value = path;
     let isMaybe = false
     if (type instanceof GraphQLNonNull) {
@@ -443,7 +442,6 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       isMaybe = true;    
       value = `o${depth}`;
     }
-
     if (type instanceof GraphQLInputObjectType) {
       let fieldEncoders: Array<string> = [];
       let fields = type.getFields();
@@ -454,31 +452,27 @@ function translateQuery(uri: string, doc: Document, schema: GraphQLSchema, verb:
       }
       encoder = '(Json.Encode.object [' + fieldEncoders.join(`, `) + '])';
     } else if (type instanceof GraphQLList) {
-    encoder = `(Json.Encode.list (\\x${depth} -> ` + encoderForInputType(depth + 1, type.ofType, true, 'x' + depth) + ') ' + value + ')';
+      encoder = `(Json.Encode.list (\\x${depth} -> ` + encoderForInputType(depth + 1, type.ofType, true, 'x' + depth) + ') ' + value + ')';
     } else if (type instanceof GraphQLScalarType) {
-
       switch (type.name) {
         case 'Int': encoder = 'Json.Encode.int ' + value; break;
         case 'Float': encoder = 'Json.Encode.float ' + value; break;
         case 'Boolean': encoder = 'Json.Encode.bool ' + value; break;
-	case 'UnixTimestamp': encoder = '(Json.Encode.int ((\\p -> p // 1000 ) <| Time.posixToMillis ' + value + ' )) '; break;
+        case 'UnixTimestamp': encoder = '(Json.Encode.int ((\\p -> p // 1000 ) <| Time.posixToMillis ' + value + ' )) '; break;
         case 'DateTime': encoder = 'Json.Encode.string ' + value; break;
         case 'String': encoder = 'Json.Encode.string ' + value; break;
         case 'ID': encoder = 'Json.Encode.string ' + value; break;
         default: encoder = 'Json.Encode.string ' + value; break;
       }
     } else if (type instanceof  GraphQLEnumType) {
-      const values = type.getValues()
-      const tuples = values.map((v) => `("${type.name + '_' + v.name[0].toUpperCase() + v.name.substr(1).toLowerCase()}", "${v.name}")`)
-      const map = `[${tuples.join(',')}]`
-      encoder = `Json.Encode.string <| Maybe.withDefault "" <| Maybe.map Tuple.second <| List.head <| (\\s -> List.filter (Tuple.first >> (==)(s)) ${map} ) <| Debug.toString ` + value;
+      const values = type.getValues();
+      const cases = values.map((v) => `${[(type.name + '_' + v.name[0].toUpperCase() + v.name.substr(1).toLowerCase())]} -> "${v.name}"`);
+      encoder = `(case ${value} of \n` + cases.join('\n') + `)|> Json.Encode.string`;
     } else {
-
       throw new Error('not implemented: ' + type.constructor.name);
     }
-
     if (isMaybe) {
-    encoder = `(maybeEncode (\\o${depth} -> ` + encoder + ') '+ path + ')'
+      encoder = `(maybeEncode (\\o${depth} -> ` + encoder + ') '+ path + ')';
     }
     return encoder;
   }
